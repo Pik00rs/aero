@@ -94,9 +94,9 @@
       <input id="rpc" value="https://base.llamarpc.com"></div>
     <div class="field" style="grid-column:1/-1"><label>RewardsSugar address (verifie sur la doc Aerodrome)</label>
       <input id="sugar" value="0x68c19e13618C41158fE4bAba1B8fb3A9c74bDb0A"></div>
-    <div class="field" style="grid-column:1/-1"><label>Ton adresse wallet → lecture auto de ta veBalance</label>
+    <div class="field" style="grid-column:1/-1"><label>Ton adresse 0x… (ou directement ton veNFT ID) → lecture de ta veBalance</label>
       <div style="display:flex;gap:8px;align-items:center">
-        <input id="addr" placeholder="0x…" style="flex:1">
+        <input id="addr" placeholder="0x… ou 12345 (numero du veNFT)" style="flex:1">
         <button id="readve" class="mini">LIRE</button>
       </div></div>
   </div>
@@ -315,33 +315,56 @@ function render(topN, V){
   });
 }
 
-// Lecture de la veBalance : somme des balanceOfNFT de tous les veNFT de l'adresse.
+// Lecture de la veBalance. Accepte une adresse 0x… (enumeration) OU un veNFT ID (lecture directe).
 async function readVe(){
-  let owner;
-  try { owner = ethers.utils.getAddress($('addr').value.trim().toLowerCase()); }
-  catch(e){ setStatus('Adresse wallet invalide (format 0x…).', true); return; }
-  const btn=$('readve'); btn.disabled=true;
+  const btn=$('readve');
+  const val = $('addr').value.trim();
+  if(!val){ setStatus('Colle ton adresse 0x… ou ton veNFT ID (un nombre).', true); return; }
+  btn.disabled=true;
   try{
     const userRpc=$('rpc').value.trim();
     const tryList = userRpc ? [userRpc, ...FALLBACK_RPCS.filter(u=>u!==userRpc)] : FALLBACK_RPCS;
     const provider = await getProvider(tryList);
     const ve = new ethers.Contract(VE_ADDRESS, VE_ABI, provider);
-    const n = (await ve.balanceOf(owner)).toNumber();
-    if(!n){ setStatus('Aucun veNFT sur cette adresse (ou delegue a un Relay/managed NFT).', true); btn.disabled=false; return; }
+
+    // Cas 1 : un veNFT ID (nombre) -> lecture directe via balanceOfNFT (le plus fiable)
+    if(/^\d+$/.test(val)){
+      const bal = await ve.balanceOfNFT(ethers.BigNumber.from(val));
+      const vp = Number(ethers.utils.formatUnits(bal, 18));
+      $('vp').value = Math.round(vp);
+      setStatus(`✓ veNFT #${val} = ${vp.toLocaleString('fr-FR',{maximumFractionDigits:2})} veAERO. Champ rempli.`);
+      btn.disabled=false; return;
+    }
+
+    // Cas 2 : une adresse -> on enumere ses veNFT, chaque appel isole
+    let owner;
+    try{ owner = ethers.utils.getAddress(val.toLowerCase()); }
+    catch(e){ setStatus('Entree invalide : adresse 0x… (42 car.) ou veNFT ID (nombre).', true); btn.disabled=false; return; }
+
+    let n;
+    try{ n = (await ve.balanceOf(owner)).toNumber(); }
+    catch(e){ setStatus('balanceOf KO. Colle plutot ton veNFT ID (le numero, visible dans l\'app Aerodrome).', true); btn.disabled=false; return; }
+    if(!n){ setStatus('0 veNFT sur cette adresse (ou delegue a un Relay). Sinon colle ton veNFT ID.', true); btn.disabled=false; return; }
+
     setStatus(`Lecture de ${n} veNFT…`);
-    let total = ethers.BigNumber.from(0);
+    let total = ethers.BigNumber.from(0), ok=0, idFail=0, balFail=0;
     const cap = Math.min(n, 50);
     for (let i=0;i<cap;i++){
-      const id  = await ve.tokenOfOwnerByIndex(owner, i);
-      const bal = await ve.balanceOfNFT(id);
-      total = total.add(bal);
+      let id;
+      try{ id = await ve.tokenOfOwnerByIndex(owner, i); }
+      catch(e){ idFail++; continue; }
+      try{ total = total.add(await ve.balanceOfNFT(id)); ok++; }
+      catch(e){ balFail++; }
+    }
+    if(ok===0){
+      setStatus(`Enumeration impossible (tokenOfOwnerByIndex:${idFail}, balanceOfNFT:${balFail}). Colle directement ton veNFT ID (le numero).`, true);
+      btn.disabled=false; return;
     }
     const vp = Number(ethers.utils.formatUnits(total, 18));
     $('vp').value = Math.round(vp);
-    setStatus(`✓ veBalance = ${vp.toLocaleString('fr-FR',{maximumFractionDigits:2})} veAERO (${n} NFT)`
-      + (n>cap?` — affiche les ${cap} premiers`:'') + '. Champ puissance de vote rempli.');
+    setStatus(`✓ veBalance = ${vp.toLocaleString('fr-FR',{maximumFractionDigits:2})} veAERO (${ok}/${n} NFT lus). Champ rempli.`);
   }catch(e){
-    setStatus('Erreur lecture veBalance : '+(e.message||e), true);
+    setStatus('Erreur veBalance : '+(e.message||e), true);
   }
   btn.disabled=false;
 }
