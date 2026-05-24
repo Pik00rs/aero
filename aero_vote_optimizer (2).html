@@ -1,0 +1,303 @@
+<!-- Aerodrome veAERO Vote Optimizer — standalone web app.
+     Calls Base RPC (ethers.js) + DeFiLlama prices directly from the browser.
+     No backend, no storage. Open the file in any modern browser. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AERO // VOTE OPTIMIZER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0c08; --panel:#11140d; --line:#1f2616;
+    --ink:#d6e3c0; --dim:#6f7d5a;
+    --acid:#c6f000; --amber:#ffb020; --red:#ff5b4a; --cyan:#5be0c8;
+    --mono:'IBM Plex Mono',monospace; --disp:'Unbounded',sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:14px}
+  body{
+    background-image:
+      linear-gradient(var(--line) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:42px 42px;
+    background-position:center;
+    min-height:100vh;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  header{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:16px;border-bottom:2px solid var(--acid);padding-bottom:14px;margin-bottom:22px}
+  h1{font-family:var(--disp);font-weight:900;font-size:clamp(26px,5vw,46px);letter-spacing:-.03em;margin:0;line-height:.9;color:var(--ink)}
+  h1 span{color:var(--acid)}
+  .tag{font-size:11px;color:var(--dim);letter-spacing:.18em;text-transform:uppercase}
+  #clock{font-family:var(--disp);font-weight:700;font-size:15px;color:var(--amber);text-align:right;white-space:nowrap}
+  #clock small{display:block;color:var(--dim);font-family:var(--mono);font-weight:400;font-size:10px;letter-spacing:.15em;text-transform:uppercase}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+  .field{background:var(--panel);border:1px solid var(--line);padding:10px 12px}
+  .field label{display:block;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+  .field input{width:100%;background:transparent;border:none;color:var(--acid);font-family:var(--mono);font-size:14px;outline:none}
+  .field input:focus{color:#eaffb0}
+  .row-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  button#scan{font-family:var(--disp);font-weight:700;font-size:14px;letter-spacing:.04em;background:var(--acid);color:#0a0c08;border:none;padding:13px 26px;cursor:pointer;transition:transform .08s,box-shadow .2s}
+  button#scan:hover{transform:translate(-2px,-2px);box-shadow:4px 4px 0 var(--line)}
+  button#scan:active{transform:translate(0,0);box-shadow:none}
+  button#scan:disabled{background:var(--line);color:var(--dim);cursor:wait;box-shadow:none;transform:none}
+  #status{font-size:12px;color:var(--cyan);min-height:18px}
+  #status.err{color:var(--red)}
+  .note{font-size:11px;color:var(--dim);line-height:1.6;border-left:2px solid var(--amber);padding:8px 0 8px 12px;margin:18px 0}
+  .note b{color:var(--amber)}
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+  thead th{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:right;padding:10px 8px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+  thead th:first-child,thead th:nth-child(2){text-align:left}
+  thead th:hover{color:var(--acid)}
+  tbody td{padding:11px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  tbody td:first-child{text-align:left;color:var(--dim)}
+  tbody td:nth-child(2){text-align:left}
+  tbody tr{animation:fade .4s ease both}
+  tbody tr:nth-child(1){animation-delay:.02s}tbody tr:nth-child(2){animation-delay:.05s}
+  tbody tr:nth-child(3){animation-delay:.08s}tbody tr:nth-child(4){animation-delay:.11s}
+  tbody tr:nth-child(5){animation-delay:.14s}
+  tbody tr.top{background:linear-gradient(90deg,rgba(198,240,0,.08),transparent)}
+  tbody tr.top td:nth-child(2){color:var(--acid);font-weight:600}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .pill{display:inline-block;border:1px solid var(--line);padding:1px 6px;font-size:10px;color:var(--cyan);margin-left:4px}
+  .lp{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--line)}
+  .lp:hover{color:var(--acid)}
+  .mine{color:var(--acid);font-weight:600}
+  .best{margin-top:22px;background:var(--panel);border:1px solid var(--acid);padding:16px 18px}
+  .best h3{font-family:var(--disp);margin:0 0 8px;font-size:15px;color:var(--acid);letter-spacing:.02em}
+  .best p{margin:4px 0;font-size:13px}
+  .big{font-family:var(--disp);font-weight:900;font-size:30px;color:var(--amber);letter-spacing:-.02em}
+  footer{margin-top:30px;font-size:10px;color:var(--dim);letter-spacing:.1em;line-height:1.7}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="tag">Base · ve(3,3) · epoch hebdo</div>
+      <h1>AERO<span>//</span>VOTE</h1>
+    </div>
+    <div id="clock">—<small>avant cloture epoch (jeu 00:00 UTC)</small></div>
+  </header>
+
+  <div class="grid">
+    <div class="field"><label>Ta puissance de vote (veAERO)</label>
+      <input id="vp" value="100000" inputmode="numeric"></div>
+    <div class="field"><label>Recompense min ($)</label>
+      <input id="minR" value="50" inputmode="numeric"></div>
+    <div class="field"><label>Pools a afficher</label>
+      <input id="topN" value="20" inputmode="numeric"></div>
+    <div class="field"><label>RPC Base</label>
+      <input id="rpc" value="https://base.llamarpc.com"></div>
+    <div class="field" style="grid-column:1/-1"><label>RewardsSugar address (verifie sur la doc Aerodrome)</label>
+      <input id="sugar" value="0x6F0c4D027C5fa323479B30009d4d6dc11Cc9aac0"></div>
+  </div>
+
+  <div class="row-actions">
+    <button id="scan">▶ SCANNER LES POOLS</button>
+    <div id="status">Pret. Lance le scan ~4-5h avant la cloture.</div>
+  </div>
+
+  <div class="note">
+    <b>Metrique :</b> on classe par <b>ton gain projete = R · V/(X+V)</b>, ta propre dilution incluse
+    (R = bribes + frais du pool, X = votes deja deposes, V = ta puissance de vote).
+    Un gros position dilue les petits pools : regarde la colonne <b>$/vote (toi)</b>, pas le brut.
+  </div>
+
+  <div id="out"></div>
+
+  <footer>
+    DONNEES on-chain via RewardsSugar (Base) + prix DeFiLlama · aucune donnee stockee ·
+    NON un conseil financier · verifie l'adresse Sugar + ta veBalance reelle avant de voter ·
+    fusion Velodrome T2 2026 peut modifier les contrats.
+  </footer>
+</div>
+
+<script>
+const ABI = [{
+  "type":"function","name":"epochsLatest","stateMutability":"view",
+  "inputs":[{"name":"_limit","type":"uint256"},{"name":"_offset","type":"uint256"}],
+  "outputs":[{"name":"","type":"tuple[]","components":[
+    {"name":"lp","type":"address"},
+    {"name":"epoch","type":"uint256"},
+    {"name":"votes","type":"uint256"},
+    {"name":"emissions","type":"uint256"},
+    {"name":"bribes","type":"tuple[]","components":[
+      {"name":"token","type":"address"},{"name":"amount","type":"uint256"}]},
+    {"name":"fees","type":"tuple[]","components":[
+      {"name":"token","type":"address"},{"name":"amount","type":"uint256"}]}
+  ]}]
+}];
+
+const $ = id => document.getElementById(id);
+let rows = [], sortKey = 'my', sortDir = -1;
+const BASE_NET = { chainId: 8453, name: 'base' };
+
+// RPC de secours connus pour tolerer une origine "null" (fichier local).
+const FALLBACK_RPCS = [
+  'https://mainnet.base.org',
+  'https://base-rpc.publicnode.com',
+  'https://base.publicnode.com',
+  'https://base.drpc.org',
+  'https://1rpc.io/base',
+  'https://base.meowrpc.com'
+];
+
+// Essaie chaque RPC : reseau force (pas de detection), test reel via getBlockNumber.
+async function getProvider(urls){
+  for (const url of urls){
+    try{
+      setStatus('Essai RPC : '+url+' …');
+      const p = new ethers.providers.StaticJsonRpcProvider(
+        { url, timeout: 12000 }, BASE_NET);
+      await p.getBlockNumber();              // force un vrai appel -> revele CORS
+      setStatus('✓ RPC connecte : '+url);
+      return p;
+    }catch(e){ /* CORS/timeout -> on tente le suivant */ }
+  }
+  throw new Error('NORPC');
+}
+
+// ---- epoch countdown (jeudi 00:00 UTC) ----
+function tick(){
+  const now = new Date();
+  const d = new Date(now);
+  let ahead = (4 - d.getUTCDay() + 7) % 7; // 4 = jeudi (getUTCDay: dim=0)
+  d.setUTCDate(d.getUTCDate()+ahead); d.setUTCHours(0,0,0,0);
+  if (d <= now) d.setUTCDate(d.getUTCDate()+7);
+  const ms = d - now, h = Math.floor(ms/3.6e6), m = Math.floor(ms%3.6e6/6e4);
+  const win = (h*60+m) >= 120 && (h*60+m) <= 480;
+  $('clock').innerHTML = `${h}h ${String(m).padStart(2,'0')}m`
+    + `<small>${win?'✓ fenetre de vote ideale':'avant cloture epoch (jeu 00:00 UTC)'}</small>`;
+  $('clock').style.color = win ? 'var(--acid)' : 'var(--amber)';
+}
+tick(); setInterval(tick, 30000);
+
+function setStatus(t, err){ const s=$('status'); s.textContent=t; s.className=err?'err':''; }
+
+async function fetchPrices(addrs){
+  const uniq = [...new Set(addrs.map(a=>a.toLowerCase()))];
+  const prices = {};
+  for (let i=0;i<uniq.length;i+=60){
+    const ids = uniq.slice(i,i+60).map(a=>'base:'+a).join(',');
+    try{
+      const r = await fetch('https://coins.llama.fi/prices/current/'+ids);
+      const c = (await r.json()).coins || {};
+      for (const k in c){ prices[k.split(':')[1].toLowerCase()] = c[k]; }
+    }catch(e){ /* batch sans prix : ignore */ }
+  }
+  return prices;
+}
+
+function usd(list, prices){
+  let t=0, syms={};
+  for (const it of list){
+    const p = prices[it.token.toLowerCase()];
+    if(!p) continue;
+    const amt = Number(ethers.utils.formatUnits(it.amount, p.decimals ?? 18));
+    const v = amt * (p.price||0);
+    t += v;
+    if (p.symbol) syms[p.symbol] = (syms[p.symbol]||0)+v;
+  }
+  return {t, syms};
+}
+
+async function scan(){
+  const btn=$('scan'); btn.disabled=true;
+  const V = Math.max(0, Number($('vp').value)||0);
+  const minR = Number($('minR').value)||0;
+  const topN = Math.max(1, Number($('topN').value)||20);
+  $('out').innerHTML='';
+  try{
+    setStatus('Connexion au RPC Base…');
+    const userRpc = $('rpc').value.trim();
+    const tryList = userRpc ? [userRpc, ...FALLBACK_RPCS.filter(u=>u!==userRpc)] : FALLBACK_RPCS;
+    let provider;
+    try { provider = await getProvider(tryList); }
+    catch(e){
+      setStatus('Aucun RPC joignable. Cause probable : VPN actif, ou origine "null" du fichier local bloquee en CORS. Coupe le VPN et reessaie ; sinon ouvre le fichier via un petit serveur local.', true);
+      btn.disabled=false; return;
+    }
+    let sugarAddr;
+    try {
+      // lowercase d'abord -> getAddress recalcule le checksum correct (tolere toute casse)
+      sugarAddr = ethers.utils.getAddress($('sugar').value.trim().toLowerCase());
+    } catch(e){
+      setStatus('Adresse Sugar invalide : colle une adresse 0x… de 42 caracteres.', true);
+      btn.disabled=false; return;
+    }
+    const sugar = new ethers.Contract(sugarAddr, ABI, provider);
+
+    setStatus('Lecture des pools via Sugar…');
+    let raw=[], offset=0;
+    for (let p=0;p<5;p++){
+      const batch = await sugar.epochsLatest(200, offset);
+      raw = raw.concat(batch);
+      if (batch.length < 200) break;
+      offset += 200;
+      setStatus(`Lecture des pools… ${raw.length}`);
+    }
+    if(!raw.length){ setStatus('Aucun pool retourne. Verifie l\'adresse Sugar / l\'ABI.', true); btn.disabled=false; return; }
+
+    setStatus(`Recuperation des prix (${raw.length} pools)…`);
+    const toks=new Set();
+    raw.forEach(r=>[...r.bribes,...r.fees].forEach(x=>toks.add(x.token)));
+    const prices = await fetchPrices([...toks]);
+
+    rows = raw.map(r=>{
+      const X = Number(ethers.utils.formatUnits(r.votes,18));
+      const b = usd(r.bribes,prices), f = usd(r.fees,prices);
+      const R = b.t + f.t;
+      const syms = {...b.syms}; for(const k in f.syms) syms[k]=(syms[k]||0)+f.syms[k];
+      const top2 = Object.entries(syms).sort((a,c)=>c[1]-a[1]).slice(0,2).map(x=>x[0]);
+      return { lp:r.lp, X, R, top2,
+        naive: X>0 ? R/X : 0,
+        eff: R/(X+V),
+        my: (X+V)>0 ? R*V/(X+V) : 0 };
+    }).filter(r=>r.R>=minR);
+
+    if(!rows.length){ setStatus('Pools lus, mais aucun au-dessus du seuil de recompense.', true); btn.disabled=false; return; }
+    setStatus(`✓ ${rows.length} pools analyses. Classement par ton gain projete.`);
+    render(topN, V);
+  }catch(e){
+    setStatus('Erreur: '+(e.message||e)+' — souvent un souci CORS du RPC ou une mauvaise adresse Sugar. Essaie un autre RPC.', true);
+  }
+  btn.disabled=false;
+}
+
+function render(topN, V){
+  rows.sort((a,b)=> sortDir*((a[sortKey]||0)-(b[sortKey]||0)));
+  const top = rows.slice(0,topN);
+  const fmt=(n,d=0)=>n.toLocaleString('fr-FR',{maximumFractionDigits:d,minimumFractionDigits:d});
+  const col=(k,label)=>`<th data-k="${k}">${label}${sortKey===k?(sortDir<0?' ▼':' ▲'):''}</th>`;
+  let h=`<table><thead><tr>
+    <th>#</th><th>Pool</th>
+    ${col('X','Votes X')}${col('R','Recomp. R $')}
+    ${col('naive','$/vote brut')}${col('eff','$/vote (toi)')}${col('my','Ton gain $/sem')}
+  </tr></thead><tbody>`;
+  top.forEach((r,i)=>{
+    const tags = r.top2.map(s=>`<span class="pill">${s}</span>`).join('');
+    h+=`<tr class="${i===0?'top':''}">
+      <td>${i+1}</td>
+      <td><a class="lp" href="https://basescan.org/address/${r.lp}" target="_blank">${r.lp.slice(0,6)}…${r.lp.slice(-4)}</a>${tags}</td>
+      <td>${fmt(r.X)}</td><td>${fmt(r.R)}</td>
+      <td>${r.naive.toFixed(5)}</td><td class="mine">${r.eff.toFixed(5)}</td>
+      <td class="mine">${fmt(r.my)}</td></tr>`;
+  });
+  h+='</tbody></table>';
+
+  const best=top[0];
+  h+=`<div class="best"><h3>★ Meilleur pool cette epoch</h3>
+    <p><a class="lp" href="https://basescan.org/address/${best.lp}" target="_blank">${best.lp}</a> ${best.top2.map(s=>`<span class="pill">${s}</span>`).join('')}</p>
+    <p>Gain estime en votant 100% ici : <span class="big">${fmt(best.my)} $</span> / semaine</p>
+    <p style="color:var(--dim)">≈ ${fmt(best.my*52)} $/an si conditions stables (les bribes changent chaque epoch). Hors emissions LP si tu deposes aussi ta liquidite dans ce pool.</p>
+  </div>`;
+  $('out').innerHTML=h;
+  document.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k;sortDir=-1;}
+    render(topN, V);
+  });
+}
+
+$('scan').onclick=scan;
+</script>
